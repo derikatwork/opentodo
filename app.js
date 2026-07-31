@@ -56,13 +56,17 @@
   }
 
   /* ---------- Progress ---------- */
-  function computeProgress(t) {
-    if (t.status === 'done') return 100;
+  // Progress from subtasks (if any) or the manual slider, ignoring status.
+  function rawProgress(t) {
     if (t.subtasks && t.subtasks.length) {
       const done = t.subtasks.filter(s => s.done).length;
       return Math.round((done / t.subtasks.length) * 100);
     }
     return t.progress || 0;
+  }
+  function computeProgress(t) {
+    if (t.status === 'done') return 100;
+    return rawProgress(t);
   }
 
   /* ---------- Recurrence ---------- */
@@ -385,7 +389,9 @@
   }
 
   /* ---------- Modal ---------- */
+  let modalLoading = false; // suppress progress→status sync while populating the form
   function openModal(id) {
+    modalLoading = true;
     const isEdit = !!id;
     const t = isEdit ? tasks.find(x => x.id === id) : null;
     $('#modalTitle').textContent = isEdit ? 'Edit task' : 'New task';
@@ -404,6 +410,7 @@
     updateProgressUI();
     $('#deleteBtn').hidden = !isEdit;
     $('#modalOverlay').hidden = false;
+    modalLoading = false;
     setTimeout(() => $('#f-title').focus(), 30);
   }
   function closeModal() { $('#modalOverlay').hidden = true; }
@@ -437,6 +444,20 @@
       hint.textContent = 'No subtasks — drag to set progress manually.';
     }
     $('#progressOut').textContent = range.value + '%';
+    syncStatusToProgress();
+  }
+
+  // Keep the status field in step with progress: 100% flips to Done; dropping
+  // back below 100% releases the auto-Done back to In Progress.
+  function syncStatusToProgress() {
+    if (modalLoading) return;
+    const pct = parseInt($('#f-progress').value, 10) || 0;
+    const statusSel = $('#f-status');
+    if (pct >= 100 && statusSel.value !== 'done') {
+      statusSel.value = 'done';
+    } else if (pct < 100 && statusSel.value === 'done') {
+      statusSel.value = 'in-progress';
+    }
   }
 
   function saveFromForm(e) {
@@ -459,18 +480,21 @@
       subtasks: editingSubtasks.map(s => ({ id: s.id || uid(), text: s.text, done: !!s.done }))
     };
 
+    // Reaching 100% progress completes the task automatically.
+    let targetStatus = $('#f-status').value;
+    if (rawProgress(data) >= 100) targetStatus = 'done';
+
     if (id) {
       const t = tasks.find(x => x.id === id);
       Object.assign(t, data);
-      applyStatusChange(t, $('#f-status').value);
+      applyStatusChange(t, targetStatus);
     } else {
-      const status = $('#f-status').value;
       const t = {
         id: uid(), ...data, status: 'todo',
         createdAt: new Date().toISOString(), completedAt: null
       };
       tasks.push(t);
-      applyStatusChange(t, status);
+      applyStatusChange(t, targetStatus);
     }
     save();
     closeModal();
@@ -564,7 +588,10 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeReminderPanel(); } });
 
     // Progress slider live label
-    $('#f-progress').addEventListener('input', () => $('#progressOut').textContent = $('#f-progress').value + '%');
+    $('#f-progress').addEventListener('input', () => {
+      $('#progressOut').textContent = $('#f-progress').value + '%';
+      syncStatusToProgress();
+    });
 
     // Subtask add
     $('#subtaskInput').addEventListener('keydown', e => {
