@@ -127,15 +127,25 @@
     return null;
   }
 
+  function daysInMonthOf(date) {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  }
   // Which occurrence of its weekday a date is within its month: 1st … 5th.
   function weekdayOrdinal(date) { return Math.ceil(date.getDate() / 7); }
   // Is this the last occurrence of its weekday in the month?
   function isLastWeekdayOfMonth(date) {
-    const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-    return date.getDate() + 7 > daysInMonth;
+    return date.getDate() + 7 > daysInMonthOf(date);
   }
   function matchesMonthlyRules(date, mdays, wpos) {
-    if (mdays && mdays.includes(date.getDate())) return true;
+    if (mdays) {
+      const dom = date.getDate();
+      if (mdays.includes(dom)) return true;
+      // Clamp overflow: a selected day beyond this month's length (e.g. the 31st
+      // in April, or the 29th/30th/31st in a short February) falls on the last
+      // day of the month. daysInMonthOf() resolves Feb 28 vs 29 by leap year.
+      const dim = daysInMonthOf(date);
+      if (dom === dim && mdays.some(m => m > dim)) return true;
+    }
     if (wpos) {
       const wd = (date.getDay() + 6) % 7;
       return wpos.some(p => p.day === wd &&
