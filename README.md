@@ -8,7 +8,7 @@ A self-contained to-do list web app. No server, no build step, no accounts — o
 |---|---|
 | **Enter things to be done** | `+ New task` with title, notes, priority, dates, recurrence, and subtasks. |
 | **Reminder the day prior** | Any task with a due date and reminders enabled surfaces in the 🔔 panel the day before (and the day of / when overdue). Click **Enable desktop alerts** to also get a browser notification the day before. |
-| **Recurring events** | Set *Repeats* to daily / weekly / monthly / yearly. **Weekly** lets you pick specific weekdays (Monday-first), and **monthly** lets you pick specific days of the month. Completing the task spawns the next occurrence on the next matching day (dates and subtasks carried forward). |
+| **Recurring events** | Set *Repeats* to daily / weekly / monthly / yearly. **Weekly** lets you pick specific weekdays (Monday-first). **Monthly** lets you pick specific days of the month (1–31) and/or weekday positions (e.g. "2nd Tuesday", "last Friday") — the two can be combined, and the next occurrence is the earliest date matching any selected rule. Completing the task spawns the next occurrence (dates and subtasks carried forward). |
 | **Prioritize** | Four levels — Low, Medium, High, Critical — shown as a color stripe and used for sorting and the dashboard breakdown. |
 | **Multi-day tasks** | Give a task both a start and due date; it renders as a `start → due` span. |
 | **Monitor progression** | Per-task progress bars, a **Dashboard** with average progress / due-soon / overdue / completed counts, and subtasks that compute progress automatically. |
