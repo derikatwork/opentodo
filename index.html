@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenTodo</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✅</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-logo">✅</span>
+      <h1>OpenTodo</h1>
+    </div>
+
+    <nav class="views" role="tablist" aria-label="Views">
+      <button class="view-tab is-active" data-view="dashboard" role="tab">Dashboard</button>
+      <button class="view-tab" data-view="list" role="tab">List</button>
+      <button class="view-tab" data-view="board" role="tab">Board</button>
+      <button class="view-tab" data-view="completed" role="tab">Completed</button>
+    </nav>
+
+    <div class="topbar-actions">
+      <button id="reminderBell" class="icon-btn" title="Reminders" aria-label="Reminders">
+        🔔<span id="reminderCount" class="badge" hidden>0</span>
+      </button>
+      <button id="themeToggle" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
+      <button id="newTaskBtn" class="btn btn-primary">+ New task</button>
+    </div>
+  </header>
+
+  <!-- Reminder dropdown -->
+  <div id="reminderPanel" class="reminder-panel" hidden>
+    <div class="reminder-panel-head">
+      <strong>Reminders</strong>
+      <button id="enableNotifBtn" class="btn btn-ghost btn-sm">Enable desktop alerts</button>
+    </div>
+    <ul id="reminderList" class="reminder-list"></ul>
+  </div>
+
+  <main class="content">
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view">
+      <div class="stats-grid">
+        <div class="stat-card"><span class="stat-num" id="statTotal">0</span><span class="stat-label">Active tasks</span></div>
+        <div class="stat-card"><span class="stat-num" id="statProgress">0%</span><span class="stat-label">Avg progress</span></div>
+        <div class="stat-card"><span class="stat-num" id="statDueSoon">0</span><span class="stat-label">Due within 24h</span></div>
+        <div class="stat-card stat-danger"><span class="stat-num" id="statOverdue">0</span><span class="stat-label">Overdue</span></div>
+        <div class="stat-card stat-done"><span class="stat-num" id="statDone">0</span><span class="stat-label">Completed</span></div>
+      </div>
+
+      <div class="dash-columns">
+        <div class="dash-col">
+          <h2 class="section-title">Priority breakdown</h2>
+          <div id="priorityBreakdown" class="priority-breakdown"></div>
+        </div>
+        <div class="dash-col">
+          <h2 class="section-title">Coming up</h2>
+          <ul id="upcomingList" class="upcoming-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- List -->
+    <section id="view-list" class="view" hidden>
+      <div class="toolbar">
+        <input type="search" id="searchInput" class="search" placeholder="Search tasks…" />
+        <select id="filterPriority" class="select">
+          <option value="">All priorities</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <select id="sortBy" class="select">
+          <option value="due">Sort: Due date</option>
+          <option value="priority">Sort: Priority</option>
+          <option value="created">Sort: Created</option>
+          <option value="progress">Sort: Progress</option>
+        </select>
+      </div>
+      <div id="taskList" class="task-list"></div>
+      <p id="listEmpty" class="empty" hidden>No tasks yet. Click <strong>+ New task</strong> to get started.</p>
+    </section>
+
+    <!-- Board / Kanban -->
+    <section id="view-board" class="view" hidden>
+      <div class="board" id="board">
+        <div class="board-col" data-status="todo">
+          <h2 class="board-col-head">To Do <span class="col-count" data-count="todo">0</span></h2>
+          <div class="board-col-body" data-status="todo"></div>
+        </div>
+        <div class="board-col" data-status="in-progress">
+          <h2 class="board-col-head">In Progress <span class="col-count" data-count="in-progress">0</span></h2>
+          <div class="board-col-body" data-status="in-progress"></div>
+        </div>
+        <div class="board-col" data-status="done">
+          <h2 class="board-col-head">Done <span class="col-count" data-count="done">0</span></h2>
+          <div class="board-col-body" data-status="done"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Completed log -->
+    <section id="view-completed" class="view" hidden>
+      <h2 class="section-title">Completion history</h2>
+      <div id="completedList" class="completed-list"></div>
+      <p id="completedEmpty" class="empty" hidden>Nothing checked off yet.</p>
+    </section>
+  </main>
+
+  <!-- Task editor modal -->
+  <div id="modalOverlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <h2 id="modalTitle">New task</h2>
+        <button id="modalClose" class="icon-btn" aria-label="Close">✕</button>
+      </div>
+      <form id="taskForm" class="modal-body">
+        <input type="hidden" id="f-id" />
+
+        <label class="field">
+          <span>Title *</span>
+          <input type="text" id="f-title" required maxlength="200" placeholder="What needs to be done?" />
+        </label>
+
+        <label class="field">
+          <span>Notes</span>
+          <textarea id="f-notes" rows="2" placeholder="Optional details…"></textarea>
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Priority</span>
+            <select id="f-priority">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Status</span>
+            <select id="f-status">
+              <option value="todo">To Do</option>
+              <option value="in-progress">In Progress</option>
+              <option value="done">Done</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Start date</span>
+            <input type="date" id="f-start" />
+          </label>
+          <label class="field">
+            <span>Due date</span>
+            <input type="date" id="f-due" />
+          </label>
+        </div>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Repeats</span>
+            <select id="f-recur">
+              <option value="none">Does not repeat</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
+          <label class="field checkbox-field">
+            <input type="checkbox" id="f-reminder" checked />
+            <span>Remind me the day before it's due</span>
+          </label>
+        </div>
+
+        <fieldset class="subtasks">
+          <legend>Subtasks <small>(drive progress automatically)</small></legend>
+          <div id="subtaskList" class="subtask-list"></div>
+          <div class="subtask-add">
+            <input type="text" id="subtaskInput" placeholder="Add a step and press Enter…" />
+          </div>
+        </fieldset>
+
+        <label class="field">
+          <span>Manual progress <output id="progressOut">0%</output></span>
+          <input type="range" id="f-progress" min="0" max="100" step="5" value="0" />
+          <small class="hint" id="progressHint"></small>
+        </label>
+
+        <div class="modal-foot">
+          <button type="button" id="deleteBtn" class="btn btn-danger" hidden>Delete</button>
+          <div class="spacer"></div>
+          <button type="button" id="cancelBtn" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
