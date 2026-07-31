@@ -587,13 +587,35 @@
     return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   }
 
+  // Monday-based weekdays that have a 5th occurrence in the due date's month.
+  // Only days 29–31 can be a weekday's 5th occurrence, so their weekdays are
+  // exactly the ones with five. Returns null when no due date is set (no limit).
+  function fifthWeekdaysOfDueMonth() {
+    const due = $('#f-due').value;
+    if (!due) return null;
+    const d = parseDate(due);
+    const y = d.getFullYear(), m = d.getMonth();
+    const dim = new Date(y, m + 1, 0).getDate();
+    const set = new Set();
+    for (let day = 29; day <= dim; day++) set.add((new Date(y, m, day).getDay() + 6) % 7);
+    return set;
+  }
+
   // Grid of ordinal × weekday cells: "2nd Tuesday", "last Friday", etc.
   function renderWeekposGrid() {
+    const fifth = fifthWeekdaysOfDueMonth();
+    // Drop any "5th <weekday>" selection that can't occur in the due month.
+    if (fifth) editingRecurMonthWeekdays = editingRecurMonthWeekdays.filter(
+      p => p.ord !== 5 || fifth.has(p.day));
+    // Hide the 5th row entirely when no weekday has a 5th occurrence (28-day Feb).
+    const showFifthRow = !fifth || fifth.size > 0;
+
     const wrap = $('#weekposToggles');
     wrap.innerHTML = '';
     wrap.appendChild(cell('span', 'wp-corner', ''));
     WEEKDAYS.forEach(d => wrap.appendChild(cell('span', 'wp-head', d)));
     ORDINALS.forEach(o => {
+      if (o.v === 5 && !showFifthRow) return;
       wrap.appendChild(cell('span', 'wp-rowlabel', o.label));
       WEEKDAYS.forEach((d, wd) => {
         const b = cell('button', 'daytoggle wp-cell', '');
@@ -601,6 +623,11 @@
         b.dataset.ord = o.v;
         b.dataset.wpday = wd;
         b.title = `${o.label} ${d}`;
+        // A weekday's 5th occurrence doesn't exist in every month.
+        if (o.v === 5 && fifth && !fifth.has(wd)) {
+          b.disabled = true;
+          b.title = `No 5th ${d} in the due date's month`;
+        }
         if (findWpos(o.v, wd) !== -1) b.classList.add('selected');
         wrap.appendChild(b);
       });
@@ -828,7 +855,7 @@
     // Weekday-position toggles, e.g. "2nd Tuesday" (delegated)
     $('#weekposToggles').addEventListener('click', e => {
       const b = e.target.closest('[data-wpday]');
-      if (!b) return;
+      if (!b || b.disabled) return;
       const ord = b.dataset.ord === 'last' ? 'last' : +b.dataset.ord;
       const day = +b.dataset.wpday;
       const i = findWpos(ord, day);
