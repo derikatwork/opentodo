@@ -17,7 +17,8 @@
   let currentView = 'dashboard';
   let editingSubtasks = []; // working copy while modal is open
   let editingRecurDays = []; // Mon=0 … Sun=6, weekly recurrence
-  let editingRecurMonthDays = []; // 1 … 31, monthly recurrence
+  let editingRecurMonthDays = []; // 1 … 31, monthly by day-of-month
+  let editingRecurMonthWeekdays = []; // [{ord, day}], monthly by weekday position
   let notifiedIds = new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'));
 
   /* ---------- Persistence ---------- */
@@ -74,6 +75,8 @@
   /* ---------- Recurrence ---------- */
   // Monday-first weekday index for a date string: Mon=0 … Sun=6.
   const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const ORDINALS = [{ v: 1, label: '1st' }, { v: 2, label: '2nd' }, { v: 3, label: '3rd' }, { v: 4, label: '4th' }, { v: 5, label: '5th' }, { v: 'last', label: 'Last' }];
+  const ordLabel = ord => (ORDINALS.find(o => o.v === ord) || {}).label || ord;
   function mondayIndex(dateStr) {
     return (parseDate(dateStr).getDay() + 6) % 7;
   }
@@ -110,17 +113,35 @@
 
     if (t.recur === 'monthly') {
       const mdays = (t.recurMonthDays && t.recurMonthDays.length) ? t.recurMonthDays : null;
-      if (!mdays) return nextDate(dateStr, 'monthly');
+      const wpos = (t.recurMonthWeekdays && t.recurMonthWeekdays.length) ? t.recurMonthWeekdays : null;
+      if (!mdays && !wpos) return nextDate(dateStr, 'monthly');
       const d = parseDate(dateStr);
-      // Search up to two months; setDate rolls months over and skips
-      // days that don't exist in a given month (e.g. the 31st in February).
-      for (let i = 1; i <= 62; i++) {
+      // Next date matching ANY selected rule (day-of-month OR weekday position).
+      // Search up to a year so rules that occur rarely (e.g. a 5th Friday) resolve.
+      for (let i = 1; i <= 366; i++) {
         d.setDate(d.getDate() + 1);
-        if (mdays.includes(d.getDate())) return d.toISOString().slice(0, 10);
+        if (matchesMonthlyRules(d, mdays, wpos)) return d.toISOString().slice(0, 10);
       }
       return nextDate(dateStr, 'monthly');
     }
     return null;
+  }
+
+  // Which occurrence of its weekday a date is within its month: 1st … 5th.
+  function weekdayOrdinal(date) { return Math.ceil(date.getDate() / 7); }
+  // Is this the last occurrence of its weekday in the month?
+  function isLastWeekdayOfMonth(date) {
+    const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    return date.getDate() + 7 > daysInMonth;
+  }
+  function matchesMonthlyRules(date, mdays, wpos) {
+    if (mdays && mdays.includes(date.getDate())) return true;
+    if (wpos) {
+      const wd = (date.getDay() + 6) % 7;
+      return wpos.some(p => p.day === wd &&
+        (p.ord === 'last' ? isLastWeekdayOfMonth(date) : weekdayOrdinal(date) === p.ord));
+    }
+    return false;
   }
 
   // When a recurring task is completed, spawn the next occurrence.
@@ -150,6 +171,7 @@
       recur: t.recur,
       recurDays: (t.recurDays || []).slice(),
       recurMonthDays: (t.recurMonthDays || []).slice(),
+      recurMonthWeekdays: (t.recurMonthWeekdays || []).map(p => ({ ...p })),
       reminder: t.reminder,
       progress: 0,
       subtasks: (t.subtasks || []).map(s => ({ id: uid(), text: s.text, done: false })),
@@ -178,8 +200,15 @@
     if (t.recur === 'weekly' && t.recurDays && t.recurDays.length) {
       return '↻ ' + t.recurDays.slice().sort((a, b) => a - b).map(i => WEEKDAYS[i]).join(', ');
     }
-    if (t.recur === 'monthly' && t.recurMonthDays && t.recurMonthDays.length) {
-      return '↻ Monthly: ' + t.recurMonthDays.slice().sort((a, b) => a - b).map(ordinal).join(', ');
+    if (t.recur === 'monthly') {
+      const parts = [];
+      if (t.recurMonthDays && t.recurMonthDays.length) {
+        parts.push(t.recurMonthDays.slice().sort((a, b) => a - b).map(ordinal).join(', '));
+      }
+      if (t.recurMonthWeekdays && t.recurMonthWeekdays.length) {
+        parts.push(t.recurMonthWeekdays.map(p => ordLabel(p.ord) + ' ' + WEEKDAYS[p.day]).join(', '));
+      }
+      if (parts.length) return '↻ Monthly: ' + parts.join('; ');
     }
     return '↻ ' + cap(t.recur);
   }
@@ -474,6 +503,7 @@
     editingSubtasks = t ? (t.subtasks || []).map(s => ({ ...s })) : [];
     editingRecurDays = t && t.recurDays ? t.recurDays.slice() : [];
     editingRecurMonthDays = t && t.recurMonthDays ? t.recurMonthDays.slice() : [];
+    editingRecurMonthWeekdays = t && t.recurMonthWeekdays ? t.recurMonthWeekdays.map(p => ({ ...p })) : [];
     // Default a brand-new weekly/monthly task to the due (or start) date's slot.
     renderSubtaskEditor();
     renderRecurOptions();
@@ -531,7 +561,37 @@
         b.dataset.monthday = day;
         wrap.appendChild(b);
       }
+      renderWeekposGrid();
     }
+  }
+
+  // Grid of ordinal × weekday cells: "2nd Tuesday", "last Friday", etc.
+  function renderWeekposGrid() {
+    const wrap = $('#weekposToggles');
+    wrap.innerHTML = '';
+    wrap.appendChild(cell('span', 'wp-corner', ''));
+    WEEKDAYS.forEach(d => wrap.appendChild(cell('span', 'wp-head', d)));
+    ORDINALS.forEach(o => {
+      wrap.appendChild(cell('span', 'wp-rowlabel', o.label));
+      WEEKDAYS.forEach((d, wd) => {
+        const b = cell('button', 'daytoggle wp-cell', '');
+        b.type = 'button';
+        b.dataset.ord = o.v;
+        b.dataset.wpday = wd;
+        b.title = `${o.label} ${d}`;
+        if (findWpos(o.v, wd) !== -1) b.classList.add('selected');
+        wrap.appendChild(b);
+      });
+    });
+  }
+  function cell(tag, cls, text) {
+    const el = document.createElement(tag);
+    el.className = cls;
+    if (text) el.textContent = text;
+    return el;
+  }
+  function findWpos(ord, day) {
+    return editingRecurMonthWeekdays.findIndex(p => String(p.ord) === String(ord) && p.day === day);
   }
 
   function updateProgressUI() {
@@ -583,6 +643,7 @@
       recur,
       recurDays: recur === 'weekly' ? editingRecurDays.slice().sort((a, b) => a - b) : [],
       recurMonthDays: recur === 'monthly' ? editingRecurMonthDays.slice().sort((a, b) => a - b) : [],
+      recurMonthWeekdays: recur === 'monthly' ? editingRecurMonthWeekdays.map(p => ({ ...p })) : [],
       reminder: $('#f-reminder').checked,
       progress: parseInt($('#f-progress').value, 10) || 0,
       subtasks: editingSubtasks.map(s => ({ id: s.id || uid(), text: s.text, done: !!s.done }))
@@ -736,6 +797,17 @@
       const b = e.target.closest('[data-monthday]');
       if (!b) return;
       toggleInArray(editingRecurMonthDays, +b.dataset.monthday);
+      b.classList.toggle('selected');
+    });
+    // Weekday-position toggles, e.g. "2nd Tuesday" (delegated)
+    $('#weekposToggles').addEventListener('click', e => {
+      const b = e.target.closest('[data-wpday]');
+      if (!b) return;
+      const ord = b.dataset.ord === 'last' ? 'last' : +b.dataset.ord;
+      const day = +b.dataset.wpday;
+      const i = findWpos(ord, day);
+      if (i === -1) editingRecurMonthWeekdays.push({ ord, day });
+      else editingRecurMonthWeekdays.splice(i, 1);
       b.classList.toggle('selected');
     });
 
