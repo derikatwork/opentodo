@@ -260,6 +260,11 @@ body {
 .toggle-row .daytoggle { min-width: 46px; padding: 7px 10px; }
 .daytoggle:hover { border-color: var(--accent); }
 .daytoggle.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+.daytoggle:disabled {
+  opacity: .32; cursor: not-allowed; text-decoration: line-through;
+  background: var(--surface-2); color: var(--text-dim); border-color: var(--border);
+}
+.daytoggle:disabled:hover { border-color: var(--border); }
 
 .recur-title-spaced { margin-top: 6px; }
 .weekpos-grid { display: grid; grid-template-columns: 40px repeat(7, 1fr); gap: 5px; align-items: center; }

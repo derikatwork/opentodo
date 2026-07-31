@@ -561,6 +561,10 @@
       });
     }
     if (showMonthly) {
+      // Limit the picker to days that exist in the due date's month, so e.g.
+      // the 31st can't be chosen for a task due in a 30-day month.
+      const maxDay = dueDaysInMonth();
+      editingRecurMonthDays = editingRecurMonthDays.filter(d => d <= maxDay);
       const wrap = $('#monthdayToggles');
       wrap.innerHTML = '';
       for (let day = 1; day <= 31; day++) {
@@ -569,10 +573,18 @@
         b.className = 'daytoggle' + (editingRecurMonthDays.includes(day) ? ' selected' : '');
         b.textContent = day;
         b.dataset.monthday = day;
+        if (day > maxDay) { b.disabled = true; b.title = `Not in the due date's month`; }
         wrap.appendChild(b);
       }
       renderWeekposGrid();
     }
+  }
+  // Number of days in the due date's month (falls back to 31 when unset).
+  function dueDaysInMonth() {
+    const due = $('#f-due').value;
+    if (!due) return 31;
+    const d = parseDate(due);
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
   }
 
   // Grid of ordinal × weekday cells: "2nd Tuesday", "last Friday", etc.
@@ -639,10 +651,12 @@
     e.preventDefault();
     const id = $('#f-id').value;
     const title = $('#f-title').value.trim();
-    if (!title) return;
-    const start = $('#f-start').value || null;
     const due = $('#f-due').value || null;
-    if (start && due && due < start) { toast('Due date is before start date'); return; }
+    // Title and Due date are required.
+    if (!title) { $('#f-title').focus(); toast('Please enter a title'); return; }
+    if (!due) { $('#f-due').focus(); toast('Please choose a due date'); return; }
+    const start = $('#f-start').value || null;
+    if (start && due < start) { toast('Due date is before start date'); return; }
 
     const recur = $('#f-recur').value;
     const data = {
@@ -795,6 +809,8 @@
 
     // Recurrence: switch pickers when the type changes
     $('#f-recur').addEventListener('change', renderRecurOptions);
+    // Changing the due date re-scopes the day-of-month picker to that month.
+    $('#f-due').addEventListener('change', renderRecurOptions);
     // Weekday toggles (delegated)
     $('#weekdayToggles').addEventListener('click', e => {
       const b = e.target.closest('[data-weekday]');
@@ -805,7 +821,7 @@
     // Day-of-month toggles (delegated)
     $('#monthdayToggles').addEventListener('click', e => {
       const b = e.target.closest('[data-monthday]');
-      if (!b) return;
+      if (!b || b.disabled) return;
       toggleInArray(editingRecurMonthDays, +b.dataset.monthday);
       b.classList.toggle('selected');
     });
