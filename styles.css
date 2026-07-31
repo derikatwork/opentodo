@@ -261,8 +261,10 @@ body {
 .daytoggle:hover { border-color: var(--accent); }
 .daytoggle.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
 .daytoggle:disabled {
-  opacity: .32; cursor: not-allowed; text-decoration: line-through;
-  background: var(--surface-2); color: var(--text-dim); border-color: var(--border);
+  opacity: .5; cursor: not-allowed; text-decoration: line-through;
+  color: var(--text-dim); border-color: var(--border);
+  /* Diagonal hatch reads as "unavailable" even on the empty weekday cells. */
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, var(--border) 3px, var(--border) 4px);
 }
 .daytoggle:disabled:hover { border-color: var(--border); }
 
