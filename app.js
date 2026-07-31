@@ -16,6 +16,8 @@
   let tasks = load();
   let currentView = 'dashboard';
   let editingSubtasks = []; // working copy while modal is open
+  let editingRecurDays = []; // Mon=0 … Sun=6, weekly recurrence
+  let editingRecurMonthDays = []; // 1 … 31, monthly recurrence
   let notifiedIds = new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'));
 
   /* ---------- Persistence ---------- */
@@ -70,6 +72,13 @@
   }
 
   /* ---------- Recurrence ---------- */
+  // Monday-first weekday index for a date string: Mon=0 … Sun=6.
+  const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  function mondayIndex(dateStr) {
+    return (parseDate(dateStr).getDay() + 6) % 7;
+  }
+
+  // Simple period step, used for daily/yearly and as a fallback.
   function nextDate(dateStr, recur) {
     const d = parseDate(dateStr);
     switch (recur) {
@@ -81,18 +90,54 @@
     }
     return d.toISOString().slice(0, 10);
   }
+
+  // Next occurrence strictly after dateStr, honoring selected weekdays /
+  // days-of-month when the task specifies them.
+  function nextRecurDate(dateStr, t) {
+    if (t.recur === 'daily') return nextDate(dateStr, 'daily');
+    if (t.recur === 'yearly') return nextDate(dateStr, 'yearly');
+
+    if (t.recur === 'weekly') {
+      const days = (t.recurDays && t.recurDays.length) ? t.recurDays : null;
+      if (!days) return nextDate(dateStr, 'weekly');
+      const d = parseDate(dateStr);
+      for (let i = 1; i <= 7; i++) {
+        d.setDate(d.getDate() + 1);
+        if (days.includes((d.getDay() + 6) % 7)) return d.toISOString().slice(0, 10);
+      }
+      return nextDate(dateStr, 'weekly');
+    }
+
+    if (t.recur === 'monthly') {
+      const mdays = (t.recurMonthDays && t.recurMonthDays.length) ? t.recurMonthDays : null;
+      if (!mdays) return nextDate(dateStr, 'monthly');
+      const d = parseDate(dateStr);
+      // Search up to two months; setDate rolls months over and skips
+      // days that don't exist in a given month (e.g. the 31st in February).
+      for (let i = 1; i <= 62; i++) {
+        d.setDate(d.getDate() + 1);
+        if (mdays.includes(d.getDate())) return d.toISOString().slice(0, 10);
+      }
+      return nextDate(dateStr, 'monthly');
+    }
+    return null;
+  }
+
   // When a recurring task is completed, spawn the next occurrence.
   function spawnRecurrence(t) {
     if (!t.recur || t.recur === 'none') return;
     const anchor = t.due || t.start || todayStr();
-    const nextDue = nextDate(anchor, t.recur);
-    if (!nextDue) return;
-    let nextStart = null;
+    const nextAnchor = nextRecurDate(anchor, t);
+    if (!nextAnchor) return;
+    // Preserve exactly which date fields the original task carried.
+    let nextStart = null, nextDue = null;
     if (t.start && t.due) {
-      const span = daysBetween(t.start, t.due);
-      nextStart = shiftDate(nextDue, -span);
-    } else if (t.start && !t.due) {
-      nextStart = nextDate(t.start, t.recur);
+      nextDue = nextAnchor;
+      nextStart = shiftDate(nextAnchor, -daysBetween(t.start, t.due));
+    } else if (t.due) {
+      nextDue = nextAnchor;
+    } else if (t.start) {
+      nextStart = nextAnchor;
     }
     tasks.push({
       id: uid(),
@@ -103,6 +148,8 @@
       start: nextStart,
       due: nextDue,
       recur: t.recur,
+      recurDays: (t.recurDays || []).slice(),
+      recurMonthDays: (t.recurMonthDays || []).slice(),
       reminder: t.reminder,
       progress: 0,
       subtasks: (t.subtasks || []).map(s => ({ id: uid(), text: s.text, done: false })),
@@ -116,6 +163,25 @@
   function shiftDate(s, days) {
     const d = parseDate(s); d.setDate(d.getDate() + days);
     return d.toISOString().slice(0, 10);
+  }
+  function toggleInArray(arr, val) {
+    const i = arr.indexOf(val);
+    if (i === -1) arr.push(val); else arr.splice(i, 1);
+  }
+  function ordinal(n) {
+    const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+  // Human-readable recurrence, e.g. "↻ Mon, Wed, Fri" or "↻ Monthly: 1st, 15th".
+  function recurLabel(t) {
+    if (!t.recur || t.recur === 'none') return '';
+    if (t.recur === 'weekly' && t.recurDays && t.recurDays.length) {
+      return '↻ ' + t.recurDays.slice().sort((a, b) => a - b).map(i => WEEKDAYS[i]).join(', ');
+    }
+    if (t.recur === 'monthly' && t.recurMonthDays && t.recurMonthDays.length) {
+      return '↻ Monthly: ' + t.recurMonthDays.slice().sort((a, b) => a - b).map(ordinal).join(', ');
+    }
+    return '↻ ' + cap(t.recur);
   }
 
   /* ---------- Reminders ---------- */
@@ -229,7 +295,7 @@
     const pct = computeProgress(t);
     const chips = [];
     chips.push(`<span class="chip prio-${t.priority}">${cap(t.priority)}</span>`);
-    if (t.recur && t.recur !== 'none') chips.push(`<span class="chip recur">↻ ${cap(t.recur)}</span>`);
+    if (t.recur && t.recur !== 'none') chips.push(`<span class="chip recur">${esc(recurLabel(t))}</span>`);
     if (t.start && t.due && t.start !== t.due) {
       chips.push(`<span class="chip">${fmtDate(t.start)} → ${fmtDate(t.due)}</span>`);
     } else if (t.due) {
@@ -302,7 +368,7 @@
           <p class="task-title" data-open="${t.id}">${esc(t.title)}</p>
           <div class="task-meta">
             <span class="chip prio-${t.priority}">${cap(t.priority)}</span>
-            ${t.recur && t.recur !== 'none' ? '<span class="chip recur">↻</span>' : ''}
+            ${t.recur && t.recur !== 'none' ? `<span class="chip recur" title="${esc(recurLabel(t))}">↻</span>` : ''}
             ${dueChip}
           </div>
           <div class="task-progress">
@@ -406,7 +472,11 @@
     $('#f-reminder').checked = t ? !!t.reminder : true;
     $('#f-progress').value = t ? (t.progress || 0) : 0;
     editingSubtasks = t ? (t.subtasks || []).map(s => ({ ...s })) : [];
+    editingRecurDays = t && t.recurDays ? t.recurDays.slice() : [];
+    editingRecurMonthDays = t && t.recurMonthDays ? t.recurMonthDays.slice() : [];
+    // Default a brand-new weekly/monthly task to the due (or start) date's slot.
     renderSubtaskEditor();
+    renderRecurOptions();
     updateProgressUI();
     $('#deleteBtn').hidden = !isEdit;
     $('#modalOverlay').hidden = false;
@@ -427,6 +497,41 @@
       wrap.appendChild(row);
     });
     updateProgressUI();
+  }
+
+  // Show weekday / day-of-month pickers for the selected recurrence type.
+  function renderRecurOptions() {
+    const recur = $('#f-recur').value;
+    const showWeekly = recur === 'weekly';
+    const showMonthly = recur === 'monthly';
+    $('#recurDetail').hidden = !(showWeekly || showMonthly);
+    $('#recurWeekly').hidden = !showWeekly;
+    $('#recurMonthly').hidden = !showMonthly;
+
+    if (showWeekly) {
+      const wrap = $('#weekdayToggles');
+      wrap.innerHTML = '';
+      WEEKDAYS.forEach((label, idx) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'daytoggle' + (editingRecurDays.includes(idx) ? ' selected' : '');
+        b.textContent = label;
+        b.dataset.weekday = idx;
+        wrap.appendChild(b);
+      });
+    }
+    if (showMonthly) {
+      const wrap = $('#monthdayToggles');
+      wrap.innerHTML = '';
+      for (let day = 1; day <= 31; day++) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'daytoggle' + (editingRecurMonthDays.includes(day) ? ' selected' : '');
+        b.textContent = day;
+        b.dataset.monthday = day;
+        wrap.appendChild(b);
+      }
+    }
   }
 
   function updateProgressUI() {
@@ -469,12 +574,15 @@
     const due = $('#f-due').value || null;
     if (start && due && due < start) { toast('Due date is before start date'); return; }
 
+    const recur = $('#f-recur').value;
     const data = {
       title,
       notes: $('#f-notes').value.trim(),
       priority: $('#f-priority').value,
       start, due,
-      recur: $('#f-recur').value,
+      recur,
+      recurDays: recur === 'weekly' ? editingRecurDays.slice().sort((a, b) => a - b) : [],
+      recurMonthDays: recur === 'monthly' ? editingRecurMonthDays.slice().sort((a, b) => a - b) : [],
       reminder: $('#f-reminder').checked,
       progress: parseInt($('#f-progress').value, 10) || 0,
       subtasks: editingSubtasks.map(s => ({ id: s.id || uid(), text: s.text, done: !!s.done }))
@@ -612,6 +720,23 @@
     $('#subtaskList').addEventListener('change', e => {
       const tog = e.target.closest('[data-st-toggle]');
       if (tog) { editingSubtasks[+tog.dataset.stToggle].done = tog.checked; renderSubtaskEditor(); }
+    });
+
+    // Recurrence: switch pickers when the type changes
+    $('#f-recur').addEventListener('change', renderRecurOptions);
+    // Weekday toggles (delegated)
+    $('#weekdayToggles').addEventListener('click', e => {
+      const b = e.target.closest('[data-weekday]');
+      if (!b) return;
+      toggleInArray(editingRecurDays, +b.dataset.weekday);
+      b.classList.toggle('selected');
+    });
+    // Day-of-month toggles (delegated)
+    $('#monthdayToggles').addEventListener('click', e => {
+      const b = e.target.closest('[data-monthday]');
+      if (!b) return;
+      toggleInArray(editingRecurMonthDays, +b.dataset.monthday);
+      b.classList.toggle('selected');
     });
 
     // List toolbar
