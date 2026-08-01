@@ -24,7 +24,7 @@ A self-contained to-do list web app. No server, no build step, no accounts — o
 
 ## Running it
 
-Just open the file:
+The entire app is a **single self-contained `index.html`** — the CSS and JavaScript are inlined, so there are no other files to load. Just open it:
 
 ```bash
 # from the project directory
@@ -32,7 +32,9 @@ open index.html        # macOS
 xdg-open index.html    # Linux
 ```
 
-Or serve it (recommended so browser notifications behave consistently):
+Because everything lives in one file, it works even in sandboxed browsers (e.g. **Flatpak** Firefox/Chromium) that only grant access to the single file you open and would otherwise block sibling `.css`/`.js` requests. You can also just double-click the file, or drag it into a browser tab.
+
+Serving it over HTTP is optional (browser desktop notifications behave a little more consistently over `http://`):
 
 ```bash
 python3 -m http.server 8000
@@ -46,4 +48,4 @@ Everything is stored locally in your browser under the `opentodo.*` keys. Nothin
 ## Notes / possible extensions
 
 - Reminders are in-app plus optional desktop notifications while the tab is open. A future backend (Node + SQLite) could add real email/push reminders that fire even when the app is closed.
-- No dependencies — plain HTML, CSS, and vanilla JavaScript.
+- No dependencies and no build step — a single file of plain HTML, CSS, and vanilla JavaScript. Edit the `<style>` and `<script>` blocks in `index.html` directly.
